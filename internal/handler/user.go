@@ -2,10 +2,14 @@ package handler
 
 import (
 	"net/http"
+	"strconv"
 	"test-api/internal/model"
+	"test-api/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
+
+var userService = service.NewUserService()
 
 // GetUsers godoc
 // @Summary 获取所有用户
@@ -13,18 +17,40 @@ import (
 // @Tags users
 // @Accept json
 // @Produce json
+// @Param page query int false "页码，默认1" default(1)
+// @Param size query int false "每页数量，默认10" default(10)
 // @Success 200 {object} model.UserResponse
 // @Router /users [get]
 func GetUsers(c *gin.Context) {
-	// 模拟数据
-	users := []model.User{
-		{ID: "1", Username: "user1", Email: "user1@example.com", Age: 20},
-		{ID: "2", Username: "user2", Email: "user2@example.com", Age: 25},
+	// 获取分页参数
+	page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if err != nil || page < 1 {
+		page = 1
 	}
+
+	size, err := strconv.Atoi(c.DefaultQuery("size", "10"))
+	if err != nil || size < 1 {
+		size = 10
+	}
+
+	users, total, err := userService.GetUsers(page, size)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, model.UserResponse{
+			Code:    500,
+			Message: "Failed to get users",
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, model.UserResponse{
 		Code:    200,
 		Message: "success",
-		Data:    users,
+		Data: gin.H{
+			"list":  users,
+			"total": total,
+			"page":  page,
+			"size":  size,
+		},
 	})
 }
 
@@ -38,14 +64,24 @@ func GetUsers(c *gin.Context) {
 // @Success 200 {object} model.UserResponse
 // @Router /users/{id} [get]
 func GetUser(c *gin.Context) {
-	id := c.Param("id")
-	// 模拟数据
-	user := model.User{
-		ID:       id,
-		Username: "user" + id,
-		Email:    "user" + id + "@example.com",
-		Age:      20,
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.UserResponse{
+			Code:    400,
+			Message: "Invalid user ID",
+		})
+		return
 	}
+
+	user, err := userService.GetUser(uint(id))
+	if err != nil {
+		c.JSON(http.StatusNotFound, model.UserResponse{
+			Code:    404,
+			Message: "User not found",
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, model.UserResponse{
 		Code:    200,
 		Message: "success",
@@ -67,11 +103,19 @@ func CreateUser(c *gin.Context) {
 	if err := c.ShouldBindJSON(&user); err != nil {
 		c.JSON(http.StatusBadRequest, model.UserResponse{
 			Code:    400,
-			Message: "invalid request body",
+			Message: "Invalid request body",
 		})
 		return
 	}
-	// 模拟创建用户
+
+	if err := userService.CreateUser(&user); err != nil {
+		c.JSON(http.StatusInternalServerError, model.UserResponse{
+			Code:    500,
+			Message: "Failed to create user",
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, model.UserResponse{
 		Code:    200,
 		Message: "success",
@@ -90,16 +134,33 @@ func CreateUser(c *gin.Context) {
 // @Success 200 {object} model.UserResponse
 // @Router /users/{id} [put]
 func UpdateUser(c *gin.Context) {
-	id := c.Param("id")
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.UserResponse{
+			Code:    400,
+			Message: "Invalid user ID",
+		})
+		return
+	}
+
 	var user model.User
 	if err := c.ShouldBindJSON(&user); err != nil {
 		c.JSON(http.StatusBadRequest, model.UserResponse{
 			Code:    400,
-			Message: "invalid request body",
+			Message: "Invalid request body",
 		})
 		return
 	}
-	user.ID = id
+
+	user.ID = uint(id)
+	if err := userService.UpdateUser(&user); err != nil {
+		c.JSON(http.StatusInternalServerError, model.UserResponse{
+			Code:    500,
+			Message: "Failed to update user",
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, model.UserResponse{
 		Code:    200,
 		Message: "success",
@@ -117,10 +178,26 @@ func UpdateUser(c *gin.Context) {
 // @Success 200 {object} model.UserResponse
 // @Router /users/{id} [delete]
 func DeleteUser(c *gin.Context) {
-	id := c.Param("id")
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.UserResponse{
+			Code:    400,
+			Message: "Invalid user ID",
+		})
+		return
+	}
+
+	if err := userService.DeleteUser(uint(id)); err != nil {
+		c.JSON(http.StatusInternalServerError, model.UserResponse{
+			Code:    500,
+			Message: "Failed to delete user",
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, model.UserResponse{
 		Code:    200,
 		Message: "success",
-		Data:    "User " + id + " deleted",
+		Data:    "User deleted successfully",
 	})
 }
